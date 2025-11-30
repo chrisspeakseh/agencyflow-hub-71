@@ -21,6 +21,7 @@ import {
 const navigationItems = [
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
   { title: "Projects", url: "/projects", icon: FolderKanban },
+  { title: "My Workbench", url: "/workbench", icon: Users },
   { title: "Team", url: "/team", icon: Users },
 ];
 

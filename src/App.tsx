@@ -10,7 +10,9 @@ import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import Projects from "./pages/Projects";
+import ProjectDetail from "./pages/ProjectDetail";
 import Team from "./pages/Team";
+import MyWorkbench from "./pages/MyWorkbench";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -59,11 +61,31 @@ const App = () => (
             }
           />
           <Route
+            path="/projects/:projectId"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <ProjectDetail />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/team"
             element={
               <ProtectedRoute>
                 <DashboardLayout>
                   <Team />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/workbench"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout>
+                  <MyWorkbench />
                 </DashboardLayout>
               </ProtectedRoute>
             }
