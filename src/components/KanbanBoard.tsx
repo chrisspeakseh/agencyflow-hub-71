@@ -13,6 +13,7 @@ import {
   PointerSensor,
   useSensor,
   useSensors,
+  useDroppable,
 } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { TaskCard } from "./TaskCard";
@@ -39,6 +40,53 @@ interface Task {
 interface KanbanBoardProps {
   projectId: string;
   refreshKey?: number;
+}
+
+interface StatusColumnProps {
+  status: string;
+  tasks: Task[];
+  onTaskClick: (task: Task) => void;
+}
+
+function StatusColumn({ status, tasks, onTaskClick }: StatusColumnProps) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: status,
+  });
+
+  return (
+    <Card 
+      ref={setNodeRef}
+      className={`flex flex-col transition-colors ${isOver ? 'ring-2 ring-primary' : ''}`}
+    >
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm font-medium flex items-center justify-between">
+          <span>{status}</span>
+          <Badge variant="secondary" className="ml-2">
+            {tasks.length}
+          </Badge>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="flex-1 space-y-3 min-h-[200px]">
+        <SortableContext
+          items={tasks.map((t) => t.id)}
+          strategy={verticalListSortingStrategy}
+        >
+          {tasks.map((task) => (
+            <TaskCard
+              key={task.id}
+              task={task}
+              onClick={() => onTaskClick(task)}
+            />
+          ))}
+        </SortableContext>
+        {tasks.length === 0 && (
+          <p className="text-xs text-muted-foreground text-center py-8">
+            No tasks
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
 }
 
 export function KanbanBoard({ projectId, refreshKey }: KanbanBoardProps) {
@@ -164,35 +212,12 @@ export function KanbanBoard({ projectId, refreshKey }: KanbanBoardProps) {
           {TASK_STATUSES.map((status) => {
             const statusTasks = tasks.filter((task) => task.status === status);
             return (
-              <Card key={status} className="flex flex-col">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm font-medium flex items-center justify-between">
-                    <span>{status}</span>
-                    <Badge variant="secondary" className="ml-2">
-                      {statusTasks.length}
-                    </Badge>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="flex-1 space-y-3">
-                  <SortableContext
-                    items={statusTasks.map((t) => t.id)}
-                    strategy={verticalListSortingStrategy}
-                  >
-                    {statusTasks.map((task) => (
-                      <TaskCard
-                        key={task.id}
-                        task={task}
-                        onClick={() => handleTaskClick(task)}
-                      />
-                    ))}
-                  </SortableContext>
-                  {statusTasks.length === 0 && (
-                    <p className="text-xs text-muted-foreground text-center py-8">
-                      No tasks
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
+              <StatusColumn 
+                key={status} 
+                status={status} 
+                tasks={statusTasks}
+                onTaskClick={handleTaskClick}
+              />
             );
           })}
         </div>
