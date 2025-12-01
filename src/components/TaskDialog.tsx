@@ -57,7 +57,7 @@ export function TaskDialog({
     description: "",
     status: "Todo",
     priority: "P2-Medium",
-    assignee_id: "",
+    assignee_id: null as string | null,
     due_date: null as Date | null,
     is_blocked: false,
   });
@@ -82,7 +82,7 @@ export function TaskDialog({
           description: "",
           status: "Todo",
           priority: "P2-Medium",
-          assignee_id: "",
+          assignee_id: null,
           due_date: null,
           is_blocked: false,
         });
@@ -276,20 +276,27 @@ export function TaskDialog({
           <div className="space-y-2">
             <Label>Assign To</Label>
             <Select
-              value={formData.assignee_id}
+              value={formData.assignee_id || "unassigned"}
               onValueChange={(value) =>
-                setFormData({ ...formData, assignee_id: value })
+                setFormData({ ...formData, assignee_id: value === "unassigned" ? null : value })
               }
             >
               <SelectTrigger>
                 <SelectValue placeholder="Select team member" />
               </SelectTrigger>
               <SelectContent>
-                {teamMembers.map((member) => (
-                  <SelectItem key={member.id} value={member.id}>
-                    {member.full_name}
-                  </SelectItem>
-                ))}
+                <SelectItem value="unassigned">Unassigned</SelectItem>
+                {teamMembers.length === 0 ? (
+                  <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                    No team members. Add members to the project first.
+                  </div>
+                ) : (
+                  teamMembers.map((member) => (
+                    <SelectItem key={member.id} value={member.id}>
+                      {member.full_name}
+                    </SelectItem>
+                  ))
+                )}
               </SelectContent>
             </Select>
           </div>

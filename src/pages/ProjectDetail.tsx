@@ -4,9 +4,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { KanbanBoard } from "@/components/KanbanBoard";
 import { TaskDialog } from "@/components/TaskDialog";
+import { TeamMembersDialog } from "@/components/TeamMembersDialog";
 import { CalendarView } from "@/components/CalendarView";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Plus, Calendar, LayoutGrid } from "lucide-react";
+import { ArrowLeft, Plus, Calendar, LayoutGrid, Users } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface Project {
@@ -23,11 +24,32 @@ export default function ProjectDetail() {
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
   const [isTaskDialogOpen, setIsTaskDialogOpen] = useState(false);
+  const [isTeamDialogOpen, setIsTeamDialogOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [userRole, setUserRole] = useState<string | null>(null);
 
   useEffect(() => {
     fetchProject();
+    fetchUserRole();
   }, [projectId]);
+
+  const fetchUserRole = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data, error } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", user.id)
+        .single();
+
+      if (error) throw error;
+      setUserRole(data?.role || null);
+    } catch (error) {
+      console.error("Error fetching user role:", error);
+    }
+  };
 
   const fetchProject = async () => {
     try {
@@ -90,10 +112,18 @@ export default function ProjectDetail() {
             )}
           </div>
         </div>
-        <Button onClick={() => setIsTaskDialogOpen(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          New Task
-        </Button>
+        <div className="flex gap-2">
+          {(userRole === "admin" || userRole === "manager") && (
+            <Button variant="outline" onClick={() => setIsTeamDialogOpen(true)}>
+              <Users className="mr-2 h-4 w-4" />
+              Manage Team
+            </Button>
+          )}
+          <Button onClick={() => setIsTaskDialogOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            New Task
+          </Button>
+        </div>
       </div>
 
       <Tabs defaultValue="kanban" className="w-full">
@@ -122,6 +152,12 @@ export default function ProjectDetail() {
         onOpenChange={setIsTaskDialogOpen}
         projectId={projectId!}
         onTaskCreated={handleTaskCreated}
+      />
+
+      <TeamMembersDialog
+        open={isTeamDialogOpen}
+        onOpenChange={setIsTeamDialogOpen}
+        projectId={projectId!}
       />
     </div>
   );
