@@ -17,6 +17,7 @@ interface Task {
   due_date: string | null;
   is_blocked: boolean;
   project_id: string;
+  comments: string | null;
   projects: {
     name: string;
     brand_color: string;

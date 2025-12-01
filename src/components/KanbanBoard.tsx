@@ -29,6 +29,7 @@ interface Task {
   due_date: string | null;
   is_blocked: boolean;
   assignee_id: string | null;
+  comments: string | null;
   profiles?: {
     full_name: string;
     avatar_url: string | null;

@@ -15,6 +15,7 @@ interface Task {
   due_date: string | null;
   is_blocked: boolean;
   assignee_id: string | null;
+  comments: string | null;
   profiles?: {
     full_name: string;
     avatar_url: string | null;
@@ -74,8 +75,13 @@ export function TaskCard({ task, onClick }: TaskCardProps) {
           <div className="flex-1 min-w-0">
             <h4 className="font-medium mb-2 line-clamp-2">{task.title}</h4>
             {task.description && (
-              <p className="text-xs text-muted-foreground line-clamp-2 mb-3">
+              <p className="text-xs text-muted-foreground line-clamp-2 mb-2">
                 {task.description}
+              </p>
+            )}
+            {task.comments && (
+              <p className="text-xs text-muted-foreground line-clamp-1 italic">
+                💬 {task.comments}
               </p>
             )}
           </div>

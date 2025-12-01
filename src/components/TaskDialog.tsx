@@ -60,6 +60,7 @@ export function TaskDialog({
     assignee_id: null as string | null,
     due_date: null as Date | null,
     is_blocked: false,
+    comments: "",
   });
 
   useEffect(() => {
@@ -72,9 +73,10 @@ export function TaskDialog({
           description: task.description || "",
           status: task.status || "Todo",
           priority: task.priority || "P2-Medium",
-          assignee_id: task.assignee_id || "",
+          assignee_id: task.assignee_id || null,
           due_date: task.due_date ? new Date(task.due_date) : null,
           is_blocked: task.is_blocked || false,
+          comments: task.comments || "",
         });
       } else {
         setFormData({
@@ -85,6 +87,7 @@ export function TaskDialog({
           assignee_id: null,
           due_date: null,
           is_blocked: false,
+          comments: "",
         });
       }
     }
@@ -226,6 +229,19 @@ export function TaskDialog({
               }
               placeholder="Enter task description"
               rows={4}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="comments">Comments</Label>
+            <Textarea
+              id="comments"
+              value={formData.comments}
+              onChange={(e) =>
+                setFormData({ ...formData, comments: e.target.value })
+              }
+              placeholder="Add any additional comments or notes"
+              rows={3}
             />
           </div>
 
