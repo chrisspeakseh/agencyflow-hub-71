@@ -1,8 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
 import { TASK_STATUSES } from "@/config/appConfig";
 import {
@@ -11,6 +10,7 @@ import {
   DragOverlay,
   DragStartEvent,
   PointerSensor,
+  TouchSensor,
   useSensor,
   useSensors,
   useDroppable,
@@ -18,8 +18,7 @@ import {
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { TaskCard } from "./TaskCard";
 import { TaskDialog } from "./TaskDialog";
-import { Clock, AlertCircle } from "lucide-react";
-import { format } from "date-fns";
+import { AlertCircle } from "lucide-react";
 
 interface Task {
   id: string;
@@ -56,17 +55,17 @@ function StatusColumn({ status, tasks, onTaskClick }: StatusColumnProps) {
   return (
     <Card 
       ref={setNodeRef}
-      className={`flex flex-col transition-colors ${isOver ? 'ring-2 ring-primary' : ''}`}
+      className={`flex flex-col transition-colors min-w-[250px] sm:min-w-0 ${isOver ? 'ring-2 ring-primary' : ''}`}
     >
-      <CardHeader className="pb-3">
-        <CardTitle className="text-sm font-medium flex items-center justify-between">
-          <span>{status}</span>
-          <Badge variant="secondary" className="ml-2">
+      <CardHeader className="pb-2 sm:pb-3 p-3 sm:p-6">
+        <CardTitle className="text-xs sm:text-sm font-medium flex items-center justify-between">
+          <span className="truncate">{status}</span>
+          <Badge variant="secondary" className="ml-2 text-xs">
             {tasks.length}
           </Badge>
         </CardTitle>
       </CardHeader>
-      <CardContent className="flex-1 space-y-3 min-h-[200px]">
+      <CardContent className="flex-1 space-y-2 sm:space-y-3 min-h-[150px] sm:min-h-[200px] p-2 sm:p-6 pt-0 sm:pt-0">
         <SortableContext
           items={tasks.map((t) => t.id)}
           strategy={verticalListSortingStrategy}
@@ -80,7 +79,7 @@ function StatusColumn({ status, tasks, onTaskClick }: StatusColumnProps) {
           ))}
         </SortableContext>
         {tasks.length === 0 && (
-          <p className="text-xs text-muted-foreground text-center py-8">
+          <p className="text-xs text-muted-foreground text-center py-4 sm:py-8">
             No tasks
           </p>
         )}
@@ -97,19 +96,22 @@ export function KanbanBoard({ projectId, refreshKey }: KanbanBoardProps) {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const { toast } = useToast();
 
+  // Touch-friendly sensors for mobile drag and drop
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
         distance: 8,
       },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: 200,
+        tolerance: 8,
+      },
     })
   );
 
-  useEffect(() => {
-    fetchTasks();
-  }, [projectId, refreshKey]);
-
-  const fetchTasks = async () => {
+  const fetchTasks = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from("tasks")
@@ -135,7 +137,11 @@ export function KanbanBoard({ projectId, refreshKey }: KanbanBoardProps) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [projectId, toast]);
+
+  useEffect(() => {
+    fetchTasks();
+  }, [fetchTasks, refreshKey]);
 
   const handleDragStart = (event: DragStartEvent) => {
     const task = tasks.find((t) => t.id === event.active.id);
@@ -169,11 +175,10 @@ export function KanbanBoard({ projectId, refreshKey }: KanbanBoardProps) {
 
       toast({
         title: "Task updated",
-        description: "Task status has been updated successfully",
+        description: "Task status has been updated",
       });
     } catch (error: any) {
       console.error("Error updating task:", error);
-      // Revert on error
       fetchTasks();
       toast({
         title: "Error",
@@ -208,7 +213,8 @@ export function KanbanBoard({ projectId, refreshKey }: KanbanBoardProps) {
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        {/* Mobile: horizontal scroll, Desktop: grid */}
+        <div className="flex overflow-x-auto gap-3 sm:gap-6 pb-4 sm:pb-0 sm:grid sm:grid-cols-2 lg:grid-cols-4 sm:overflow-visible">
           {TASK_STATUSES.map((status) => {
             const statusTasks = tasks.filter((task) => task.status === status);
             return (
@@ -224,10 +230,10 @@ export function KanbanBoard({ projectId, refreshKey }: KanbanBoardProps) {
 
         <DragOverlay>
           {activeTask ? (
-            <Card className="opacity-90 rotate-3 cursor-grabbing shadow-xl">
-              <CardContent className="p-4">
-                <h4 className="font-medium mb-2">{activeTask.title}</h4>
-                <div className="flex items-center gap-2">
+            <Card className="opacity-90 rotate-3 cursor-grabbing shadow-xl max-w-[250px]">
+              <CardContent className="p-3 sm:p-4">
+                <h4 className="font-medium mb-2 text-sm">{activeTask.title}</h4>
+                <div className="flex items-center gap-2 flex-wrap">
                   <Badge variant="secondary" className="text-xs">
                     {activeTask.priority}
                   </Badge>

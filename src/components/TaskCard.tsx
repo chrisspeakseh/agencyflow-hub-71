@@ -68,12 +68,12 @@ export function TaskCard({ task, onClick }: TaskCardProps) {
       className={`cursor-pointer hover:shadow-md transition-shadow ${isOverdue ? 'border-destructive bg-destructive/5' : ''}`}
       onClick={onClick}
     >
-      <CardContent className="p-4">
-        <div className="flex items-start gap-2 mb-3">
+      <CardContent className="p-3 sm:p-4">
+        <div className="flex items-start gap-2 mb-2 sm:mb-3">
           <div
             {...attributes}
             {...listeners}
-            className="cursor-grab active:cursor-grabbing mt-1"
+            className="cursor-grab active:cursor-grabbing mt-1 touch-none"
           >
             <GripVertical className="h-4 w-4 text-muted-foreground" />
           </div>

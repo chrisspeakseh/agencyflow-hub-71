@@ -77,4 +77,15 @@ All colors MUST be HSL.
   .task-blocked {
     @apply border-destructive border-2 bg-destructive/5;
   }
+
+  .task-overdue {
+    @apply border-destructive border-2 bg-destructive/10;
+  }
+}
+
+/* Mobile optimizations */
+@media (max-width: 640px) {
+  .dialog-content {
+    @apply max-w-[95vw] mx-2;
+  }
 }

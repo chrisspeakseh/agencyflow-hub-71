@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import {
   Dialog,
@@ -25,6 +25,7 @@ import { useToast } from "@/hooks/use-toast";
 import { TASK_STATUSES, TASK_PRIORITIES } from "@/config/appConfig";
 import { Calendar as CalendarIcon, Loader2 } from "lucide-react";
 import { format } from "date-fns";
+import { Checkbox } from "@/components/ui/checkbox";
 
 interface TaskDialogProps {
   open: boolean;
@@ -63,6 +64,53 @@ export function TaskDialog({
     comments: "",
   });
 
+  const fetchTeamMembers = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from("project_members")
+        .select("user_id, profiles(id, full_name, email)")
+        .eq("project_id", projectId);
+
+      if (error) throw error;
+
+      const members = data
+        .map((m: any) => m.profiles)
+        .filter(Boolean) as Profile[];
+      setTeamMembers(members);
+    } catch (error) {
+      console.error("Error fetching team members:", error);
+    }
+  }, [projectId]);
+
+  const fetchProjectName = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from("projects")
+        .select("name")
+        .eq("id", projectId)
+        .single();
+
+      if (error) throw error;
+      setProjectName(data.name);
+    } catch (error) {
+      console.error("Error fetching project name:", error);
+    }
+  }, [projectId]);
+
+  const fetchTaskAssignees = useCallback(async (taskId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from("task_assignees")
+        .select("user_id")
+        .eq("task_id", taskId);
+
+      if (error) throw error;
+      setFormData(prev => ({ ...prev, assignee_ids: data.map(a => a.user_id) }));
+    } catch (error) {
+      console.error("Error fetching task assignees:", error);
+    }
+  }, []);
+
   useEffect(() => {
     if (open) {
       fetchTeamMembers();
@@ -92,54 +140,7 @@ export function TaskDialog({
         });
       }
     }
-  }, [open, task]);
-
-  const fetchTaskAssignees = async (taskId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from("task_assignees")
-        .select("user_id")
-        .eq("task_id", taskId);
-
-      if (error) throw error;
-      setFormData(prev => ({ ...prev, assignee_ids: data.map(a => a.user_id) }));
-    } catch (error) {
-      console.error("Error fetching task assignees:", error);
-    }
-  };
-
-  const fetchTeamMembers = async () => {
-    try {
-      const { data, error } = await supabase
-        .from("project_members")
-        .select("user_id, profiles(id, full_name, email)")
-        .eq("project_id", projectId);
-
-      if (error) throw error;
-
-      const members = data
-        .map((m: any) => m.profiles)
-        .filter(Boolean) as Profile[];
-      setTeamMembers(members);
-    } catch (error) {
-      console.error("Error fetching team members:", error);
-    }
-  };
-
-  const fetchProjectName = async () => {
-    try {
-      const { data, error } = await supabase
-        .from("projects")
-        .select("name")
-        .eq("id", projectId)
-        .single();
-
-      if (error) throw error;
-      setProjectName(data.name);
-    } catch (error) {
-      console.error("Error fetching project name:", error);
-    }
-  };
+  }, [open, task, fetchTeamMembers, fetchProjectName, fetchTaskAssignees]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -172,8 +173,9 @@ export function TaskDialog({
       if (result.error) throw result.error;
 
       // Handle assignees
+      const taskId = task ? task.id : result.data.id;
+      
       if (task) {
-        // Get previous assignees
         const { data: previousAssignees } = await supabase
           .from("task_assignees")
           .select("user_id")
@@ -183,7 +185,6 @@ export function TaskDialog({
         const addedIds = assignee_ids.filter(id => !previousIds.includes(id));
         const removedIds = previousIds.filter(id => !assignee_ids.includes(id));
 
-        // Remove old assignees
         if (removedIds.length > 0) {
           await supabase
             .from("task_assignees")
@@ -191,31 +192,26 @@ export function TaskDialog({
             .eq("task_id", task.id)
             .in("user_id", removedIds);
           
-          // Send unassignment emails
-          for (const userId of removedIds) {
+          // Send unassignment notifications (non-blocking)
+          removedIds.forEach(userId => {
             const member = teamMembers.find(m => m.id === userId);
             if (member) {
-              try {
-                await supabase.functions.invoke("send-assignment-notification", {
-                  body: {
-                    taskId: task.id,
-                    taskTitle: formData.title,
-                    assigneeEmail: member.email,
-                    assigneeName: member.full_name,
-                    projectName: projectName,
-                    dueDate: formData.due_date?.toISOString(),
-                    priority: formData.priority,
-                    action: "unassigned",
-                  },
-                });
-              } catch (emailError) {
-                console.error("Error sending unassignment notification:", emailError);
-              }
+              supabase.functions.invoke("send-assignment-notification", {
+                body: {
+                  taskId: task.id,
+                  taskTitle: formData.title,
+                  assigneeEmail: member.email,
+                  assigneeName: member.full_name,
+                  projectName,
+                  dueDate: formData.due_date?.toISOString(),
+                  priority: formData.priority,
+                  action: "unassigned",
+                },
+              }).catch(console.error);
             }
-          }
+          });
         }
 
-        // Add new assignees
         if (addedIds.length > 0) {
           const newAssignees = addedIds.map(userId => ({
             task_id: task.id,
@@ -223,61 +219,48 @@ export function TaskDialog({
           }));
           await supabase.from("task_assignees").insert(newAssignees);
 
-          // Send assignment emails
-          for (const userId of addedIds) {
+          addedIds.forEach(userId => {
             const member = teamMembers.find(m => m.id === userId);
             if (member) {
-              try {
-                await supabase.functions.invoke("send-assignment-notification", {
-                  body: {
-                    taskId: task.id,
-                    taskTitle: formData.title,
-                    assigneeEmail: member.email,
-                    assigneeName: member.full_name,
-                    projectName: projectName,
-                    dueDate: formData.due_date?.toISOString(),
-                    priority: formData.priority,
-                    action: "assigned",
-                  },
-                });
-              } catch (emailError) {
-                console.error("Error sending assignment notification:", emailError);
-              }
+              supabase.functions.invoke("send-assignment-notification", {
+                body: {
+                  taskId: task.id,
+                  taskTitle: formData.title,
+                  assigneeEmail: member.email,
+                  assigneeName: member.full_name,
+                  projectName,
+                  dueDate: formData.due_date?.toISOString(),
+                  priority: formData.priority,
+                  action: "assigned",
+                },
+              }).catch(console.error);
             }
-          }
+          });
         }
-      } else {
-        // New task - add all assignees
-        if (assignee_ids.length > 0) {
-          const newAssignees = assignee_ids.map(userId => ({
-            task_id: result.data.id,
-            user_id: userId,
-          }));
-          await supabase.from("task_assignees").insert(newAssignees);
+      } else if (assignee_ids.length > 0) {
+        const newAssignees = assignee_ids.map(userId => ({
+          task_id: taskId,
+          user_id: userId,
+        }));
+        await supabase.from("task_assignees").insert(newAssignees);
 
-          // Send assignment emails
-          for (const userId of assignee_ids) {
-            const member = teamMembers.find(m => m.id === userId);
-            if (member) {
-              try {
-                await supabase.functions.invoke("send-assignment-notification", {
-                  body: {
-                    taskId: result.data.id,
-                    taskTitle: formData.title,
-                    assigneeEmail: member.email,
-                    assigneeName: member.full_name,
-                    projectName: projectName,
-                    dueDate: formData.due_date?.toISOString(),
-                    priority: formData.priority,
-                    action: "assigned",
-                  },
-                });
-              } catch (emailError) {
-                console.error("Error sending assignment notification:", emailError);
-              }
-            }
+        assignee_ids.forEach(userId => {
+          const member = teamMembers.find(m => m.id === userId);
+          if (member) {
+            supabase.functions.invoke("send-assignment-notification", {
+              body: {
+                taskId,
+                taskTitle: formData.title,
+                assigneeEmail: member.email,
+                assigneeName: member.full_name,
+                projectName,
+                dueDate: formData.due_date?.toISOString(),
+                priority: formData.priority,
+                action: "assigned",
+              },
+            }).catch(console.error);
           }
-        }
+        });
       }
 
       toast({
@@ -302,14 +285,14 @@ export function TaskDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-[95vw] max-w-2xl max-h-[90vh] overflow-y-auto p-4 sm:p-6">
         <DialogHeader>
-          <DialogTitle>{task ? "Edit Task" : "Create New Task"}</DialogTitle>
+          <DialogTitle className="text-lg sm:text-xl">{task ? "Edit Task" : "Create New Task"}</DialogTitle>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="title">Title *</Label>
+            <Label htmlFor="title" className="text-sm">Title *</Label>
             <Input
               id="title"
               value={formData.title}
@@ -318,11 +301,12 @@ export function TaskDialog({
               }
               placeholder="Enter task title"
               required
+              className="h-9 sm:h-10"
             />
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="description">Description</Label>
+            <Label htmlFor="description" className="text-sm">Description</Label>
             <Textarea
               id="description"
               value={formData.description}
@@ -330,12 +314,13 @@ export function TaskDialog({
                 setFormData({ ...formData, description: e.target.value })
               }
               placeholder="Enter task description"
-              rows={4}
+              rows={3}
+              className="text-sm"
             />
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="comments">Comments</Label>
+            <Label htmlFor="comments" className="text-sm">Comments</Label>
             <Textarea
               id="comments"
               value={formData.comments}
@@ -343,20 +328,21 @@ export function TaskDialog({
                 setFormData({ ...formData, comments: e.target.value })
               }
               placeholder="Add any additional comments or notes"
-              rows={3}
+              rows={2}
+              className="text-sm"
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
             <div className="space-y-2">
-              <Label>Status</Label>
+              <Label className="text-sm">Status</Label>
               <Select
                 value={formData.status}
                 onValueChange={(value) =>
                   setFormData({ ...formData, status: value })
                 }
               >
-                <SelectTrigger>
+                <SelectTrigger className="h-9 sm:h-10">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -370,14 +356,14 @@ export function TaskDialog({
             </div>
 
             <div className="space-y-2">
-              <Label>Priority</Label>
+              <Label className="text-sm">Priority</Label>
               <Select
                 value={formData.priority}
                 onValueChange={(value) =>
                   setFormData({ ...formData, priority: value })
                 }
               >
-                <SelectTrigger>
+                <SelectTrigger className="h-9 sm:h-10">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -392,27 +378,25 @@ export function TaskDialog({
           </div>
 
           <div className="space-y-2">
-            <Label>Assign To (Multiple)</Label>
-            <div className="border rounded-md p-3 space-y-2 max-h-48 overflow-y-auto">
+            <Label className="text-sm">Assign To (Multiple)</Label>
+            <div className="border rounded-md p-2 sm:p-3 space-y-2 max-h-36 sm:max-h-48 overflow-y-auto">
               {teamMembers.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
+                <p className="text-xs sm:text-sm text-muted-foreground">
                   No team members. Add members to the project first.
                 </p>
               ) : (
                 teamMembers.map((member) => (
-                  <label key={member.id} className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
+                  <label key={member.id} className="flex items-center gap-2 cursor-pointer py-1">
+                    <Checkbox
                       checked={formData.assignee_ids.includes(member.id)}
-                      onChange={(e) => {
-                        const newIds = e.target.checked
+                      onCheckedChange={(checked) => {
+                        const newIds = checked
                           ? [...formData.assignee_ids, member.id]
                           : formData.assignee_ids.filter(id => id !== member.id);
                         setFormData({ ...formData, assignee_ids: newIds });
                       }}
-                      className="rounded border-gray-300"
                     />
-                    <span className="text-sm">{member.full_name}</span>
+                    <span className="text-xs sm:text-sm">{member.full_name}</span>
                   </label>
                 ))
               )}
@@ -420,12 +404,12 @@ export function TaskDialog({
           </div>
 
           <div className="space-y-2">
-            <Label>Due Date</Label>
+            <Label className="text-sm">Due Date</Label>
             <Popover>
               <PopoverTrigger asChild>
                 <Button
                   variant="outline"
-                  className="w-full justify-start text-left font-normal"
+                  className="w-full justify-start text-left font-normal h-9 sm:h-10 text-sm"
                 >
                   <CalendarIcon className="mr-2 h-4 w-4" />
                   {formData.due_date ? (
@@ -435,7 +419,7 @@ export function TaskDialog({
                   )}
                 </Button>
               </PopoverTrigger>
-              <PopoverContent className="w-auto p-0">
+              <PopoverContent className="w-auto p-0" align="start">
                 <Calendar
                   mode="single"
                   selected={formData.due_date || undefined}
@@ -456,19 +440,20 @@ export function TaskDialog({
                 setFormData({ ...formData, is_blocked: checked })
               }
             />
-            <Label htmlFor="blocked">Task is blocked</Label>
+            <Label htmlFor="blocked" className="text-sm">Task is blocked</Label>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="gap-2 sm:gap-0 pt-2">
             <Button
               type="button"
               variant="outline"
               onClick={() => onOpenChange(false)}
               disabled={loading}
+              className="w-full sm:w-auto h-9 sm:h-10"
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={loading}>
+            <Button type="submit" disabled={loading} className="w-full sm:w-auto h-9 sm:h-10">
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {task ? "Update" : "Create"} Task
             </Button>
