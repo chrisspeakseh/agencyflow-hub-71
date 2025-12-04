@@ -1,7 +1,26 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { FolderKanban, CheckCircle2, AlertCircle } from "lucide-react";
+import { FolderKanban, CheckCircle2, AlertCircle, Calendar } from "lucide-react";
+import { format } from "date-fns";
+
+interface Project {
+  id: string;
+  name: string;
+  brand_color: string;
+  status: string;
+}
+
+interface Task {
+  id: string;
+  title: string;
+  due_date: string | null;
+  status: string;
+  profiles?: {
+    full_name: string;
+  } | null;
+}
 
 interface DashboardStats {
   activeProjects: number;
