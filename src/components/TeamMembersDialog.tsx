@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/select";
 import { Loader2, X, UserPlus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { createNotificationForUser } from "@/lib/notifications";
 
 interface TeamMembersDialogProps {
   open: boolean;
@@ -113,18 +114,24 @@ export function TeamMembersDialog({
       const member = allUsers.find(u => u.id === selectedUserId);
 
       if (projectData && member) {
-        try {
-          await supabase.functions.invoke("send-project-member-notification", {
-            body: {
-              memberEmail: member.email,
-              memberName: member.full_name,
-              projectName: projectData.name,
-              action: "added",
-            },
-          });
-        } catch (emailError) {
-          console.error("Error sending notification:", emailError);
-        }
+        // Create in-app notification
+        await createNotificationForUser(
+          member.id,
+          "Added to Project",
+          `You have been added to the project "${projectData.name}"`,
+          "project_member",
+          `/projects/${projectId}`
+        );
+
+        // Send email notification (non-blocking)
+        supabase.functions.invoke("send-project-member-notification", {
+          body: {
+            memberEmail: member.email,
+            memberName: member.full_name,
+            projectName: projectData.name,
+            action: "added",
+          },
+        }).catch(console.error);
       }
 
       toast({
@@ -168,18 +175,23 @@ export function TeamMembersDialog({
           .single();
 
         if (projectData) {
-          try {
-            await supabase.functions.invoke("send-project-member-notification", {
-              body: {
-                memberEmail: memberToRemove.email,
-                memberName: memberToRemove.full_name,
-                projectName: projectData.name,
-                action: "removed",
-              },
-            });
-          } catch (emailError) {
-            console.error("Error sending notification:", emailError);
-          }
+          // Create in-app notification
+          await createNotificationForUser(
+            memberToRemove.id,
+            "Removed from Project",
+            `You have been removed from the project "${projectData.name}"`,
+            "project_member"
+          );
+
+          // Send email notification (non-blocking)
+          supabase.functions.invoke("send-project-member-notification", {
+            body: {
+              memberEmail: memberToRemove.email,
+              memberName: memberToRemove.full_name,
+              projectName: projectData.name,
+              action: "removed",
+            },
+          }).catch(console.error);
         }
       }
 

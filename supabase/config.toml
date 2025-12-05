@@ -8,3 +8,6 @@ verify_jwt = true
 
 [functions.send-project-member-notification]
 verify_jwt = true
+
+[functions.create-notification]
+verify_jwt = true

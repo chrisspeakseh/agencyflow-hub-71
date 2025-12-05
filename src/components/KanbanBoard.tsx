@@ -20,6 +20,7 @@ import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable"
 import { TaskCard } from "./TaskCard";
 import { TaskDialog } from "./TaskDialog";
 import { AlertCircle } from "lucide-react";
+import { createNotificationForUser } from "@/lib/notifications";
 
 interface Task {
   id: string;
@@ -161,6 +162,8 @@ export function KanbanBoard({ projectId, refreshKey }: KanbanBoardProps) {
     const task = tasks.find((t) => t.id === taskId);
     if (!task || task.status === newStatus) return;
 
+    const oldStatus = task.status;
+
     // Optimistic update
     setTasks((prev) =>
       prev.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t))
@@ -173,6 +176,38 @@ export function KanbanBoard({ projectId, refreshKey }: KanbanBoardProps) {
         .eq("id", taskId);
 
       if (error) throw error;
+
+      // Get task assignees and notify them about status change
+      const { data: assignees } = await supabase
+        .from("task_assignees")
+        .select("user_id")
+        .eq("task_id", taskId);
+
+      const { data: { user } } = await supabase.auth.getUser();
+
+      if (assignees && assignees.length > 0) {
+        // Get project name for the notification
+        const { data: projectData } = await supabase
+          .from("projects")
+          .select("name")
+          .eq("id", projectId)
+          .single();
+
+        const projectName = projectData?.name || "Unknown Project";
+
+        // Notify all assignees except the current user
+        assignees.forEach(({ user_id }) => {
+          if (user_id !== user?.id) {
+            createNotificationForUser(
+              user_id,
+              "Task Status Updated",
+              `Task "${task.title}" in project "${projectName}" moved from "${oldStatus}" to "${newStatus}"`,
+              "task_status",
+              `/projects/${projectId}`
+            );
+          }
+        });
+      }
 
       toast({
         title: "Task updated",
