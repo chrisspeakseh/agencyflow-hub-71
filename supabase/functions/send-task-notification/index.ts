@@ -1,5 +1,4 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -22,11 +21,16 @@ async function sendEmail(to: string, subject: string, body: string) {
   const smtpUser = Deno.env.get("SMTP_USER");
   const smtpPassword = Deno.env.get("SMTP_PASSWORD");
 
+  if (!smtpHost || !smtpUser || !smtpPassword) {
+    console.log("SMTP not configured, skipping email");
+    return false;
+  }
+
   console.log("Connecting to SMTP server:", smtpHost);
 
   try {
     const conn = await Deno.connect({
-      hostname: smtpHost!,
+      hostname: smtpHost,
       port: smtpPort,
       transport: "tcp",
     });
@@ -34,61 +38,50 @@ async function sendEmail(to: string, subject: string, body: string) {
     const encoder = new TextEncoder();
     const decoder = new TextDecoder();
 
-    // Upgrade to TLS if using port 465 (implicit TLS)
-    const tlsConn = await Deno.startTls(conn, { hostname: smtpHost! });
+    const tlsConn = await Deno.startTls(conn, { hostname: smtpHost });
 
-    // Read greeting
     const greeting = new Uint8Array(1024);
     await tlsConn.read(greeting);
     console.log("Server greeting:", decoder.decode(greeting));
 
-    // EHLO
     await tlsConn.write(encoder.encode(`EHLO ${smtpHost}\r\n`));
     const ehloResp = new Uint8Array(1024);
     await tlsConn.read(ehloResp);
     console.log("EHLO response:", decoder.decode(ehloResp));
 
-    // AUTH LOGIN
     await tlsConn.write(encoder.encode("AUTH LOGIN\r\n"));
     const authResp = new Uint8Array(1024);
     await tlsConn.read(authResp);
 
-    // Send username (base64 encoded)
-    const username = btoa(smtpUser!);
+    const username = btoa(smtpUser);
     await tlsConn.write(encoder.encode(`${username}\r\n`));
     const userResp = new Uint8Array(1024);
     await tlsConn.read(userResp);
 
-    // Send password (base64 encoded)
-    const password = btoa(smtpPassword!);
+    const password = btoa(smtpPassword);
     await tlsConn.write(encoder.encode(`${password}\r\n`));
     const passResp = new Uint8Array(1024);
     await tlsConn.read(passResp);
     console.log("Auth response:", decoder.decode(passResp));
 
-    // MAIL FROM
     await tlsConn.write(encoder.encode(`MAIL FROM:<${smtpUser}>\r\n`));
     const mailResp = new Uint8Array(1024);
     await tlsConn.read(mailResp);
 
-    // RCPT TO
     await tlsConn.write(encoder.encode(`RCPT TO:<${to}>\r\n`));
     const rcptResp = new Uint8Array(1024);
     await tlsConn.read(rcptResp);
 
-    // DATA
     await tlsConn.write(encoder.encode("DATA\r\n"));
     const dataResp = new Uint8Array(1024);
     await tlsConn.read(dataResp);
 
-    // Email content
     const emailContent = `From: ${smtpUser}\r\nTo: ${to}\r\nSubject: ${subject}\r\nContent-Type: text/html; charset=utf-8\r\n\r\n${body}\r\n.\r\n`;
     await tlsConn.write(encoder.encode(emailContent));
     const contentResp = new Uint8Array(1024);
     await tlsConn.read(contentResp);
     console.log("Content response:", decoder.decode(contentResp));
 
-    // QUIT
     await tlsConn.write(encoder.encode("QUIT\r\n"));
     const quitResp = new Uint8Array(1024);
     await tlsConn.read(quitResp);
@@ -103,17 +96,64 @@ async function sendEmail(to: string, subject: string, body: string) {
 }
 
 const handler = async (req: Request): Promise<Response> => {
+  // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // Handle health checks
+  if (req.method === "GET") {
+    return new Response(JSON.stringify({ status: "ok" }), {
+      status: 200,
+      headers: { "Content-Type": "application/json", ...corsHeaders },
+    });
+  }
+
   try {
-    const { taskId, taskTitle, assigneeEmail, assigneeName, projectName, dueDate, priority }: TaskNotification = await req.json();
+    // Safely parse JSON body
+    let body: TaskNotification;
+    try {
+      const text = await req.text();
+      if (!text || text.trim() === "") {
+        console.log("Empty request body received");
+        return new Response(
+          JSON.stringify({ success: true, message: "No data to process" }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json", ...corsHeaders },
+          }
+        );
+      }
+      body = JSON.parse(text);
+    } catch (parseError) {
+      console.log("Invalid JSON body:", parseError);
+      return new Response(
+        JSON.stringify({ success: true, message: "Invalid request body" }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json", ...corsHeaders },
+        }
+      );
+    }
+
+    const { taskId, taskTitle, assigneeEmail, assigneeName, projectName, dueDate, priority } = body;
+
+    // Validate required fields
+    if (!taskId || !assigneeEmail) {
+      console.log("Missing required fields");
+      return new Response(
+        JSON.stringify({ success: true, message: "Missing required fields" }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json", ...corsHeaders },
+        }
+      );
+    }
 
     console.log("Sending task notification:", { taskId, assigneeEmail });
 
     const subject = `New Task Assigned: ${taskTitle}`;
-    const body = `
+    const emailBody = `
       <html>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
           <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
@@ -138,7 +178,7 @@ const handler = async (req: Request): Promise<Response> => {
       </html>
     `;
 
-    await sendEmail(assigneeEmail, subject, body);
+    await sendEmail(assigneeEmail, subject, emailBody);
 
     return new Response(
       JSON.stringify({ success: true, message: "Notification sent" }),

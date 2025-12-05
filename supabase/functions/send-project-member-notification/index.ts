@@ -1,5 +1,4 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -19,11 +18,16 @@ async function sendEmail(to: string, subject: string, body: string) {
   const smtpUser = Deno.env.get("SMTP_USER");
   const smtpPassword = Deno.env.get("SMTP_PASSWORD");
 
+  if (!smtpHost || !smtpUser || !smtpPassword) {
+    console.log("SMTP not configured, skipping email");
+    return false;
+  }
+
   console.log("Connecting to SMTP server:", smtpHost);
 
   try {
     const conn = await Deno.connect({
-      hostname: smtpHost!,
+      hostname: smtpHost,
       port: smtpPort,
       transport: "tcp",
     });
@@ -31,7 +35,7 @@ async function sendEmail(to: string, subject: string, body: string) {
     const encoder = new TextEncoder();
     const decoder = new TextDecoder();
 
-    const tlsConn = await Deno.startTls(conn, { hostname: smtpHost! });
+    const tlsConn = await Deno.startTls(conn, { hostname: smtpHost });
 
     const greeting = new Uint8Array(1024);
     await tlsConn.read(greeting);
@@ -44,12 +48,12 @@ async function sendEmail(to: string, subject: string, body: string) {
     const authResp = new Uint8Array(1024);
     await tlsConn.read(authResp);
 
-    const username = btoa(smtpUser!);
+    const username = btoa(smtpUser);
     await tlsConn.write(encoder.encode(`${username}\r\n`));
     const userResp = new Uint8Array(1024);
     await tlsConn.read(userResp);
 
-    const password = btoa(smtpPassword!);
+    const password = btoa(smtpPassword);
     await tlsConn.write(encoder.encode(`${password}\r\n`));
     const passResp = new Uint8Array(1024);
     await tlsConn.read(passResp);
@@ -85,12 +89,59 @@ async function sendEmail(to: string, subject: string, body: string) {
 }
 
 const handler = async (req: Request): Promise<Response> => {
+  // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // Handle health checks
+  if (req.method === "GET") {
+    return new Response(JSON.stringify({ status: "ok" }), {
+      status: 200,
+      headers: { "Content-Type": "application/json", ...corsHeaders },
+    });
+  }
+
   try {
-    const { memberEmail, memberName, projectName, action }: ProjectMemberNotification = await req.json();
+    // Safely parse JSON body
+    let body: ProjectMemberNotification;
+    try {
+      const text = await req.text();
+      if (!text || text.trim() === "") {
+        console.log("Empty request body received");
+        return new Response(
+          JSON.stringify({ success: true, message: "No data to process" }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json", ...corsHeaders },
+          }
+        );
+      }
+      body = JSON.parse(text);
+    } catch (parseError) {
+      console.log("Invalid JSON body:", parseError);
+      return new Response(
+        JSON.stringify({ success: true, message: "Invalid request body" }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json", ...corsHeaders },
+        }
+      );
+    }
+
+    const { memberEmail, memberName, projectName, action } = body;
+
+    // Validate required fields
+    if (!memberEmail || !action) {
+      console.log("Missing required fields");
+      return new Response(
+        JSON.stringify({ success: true, message: "Missing required fields" }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json", ...corsHeaders },
+        }
+      );
+    }
 
     console.log(`Sending project member ${action} notification:`, { memberEmail, projectName });
 
@@ -98,7 +149,7 @@ const handler = async (req: Request): Promise<Response> => {
       ? `Added to Project: ${projectName}`
       : `Removed from Project: ${projectName}`;
     
-    const body = action === "added" ? `
+    const emailBody = action === "added" ? `
       <html>
         <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
           <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
@@ -143,7 +194,7 @@ const handler = async (req: Request): Promise<Response> => {
       </html>
     `;
 
-    await sendEmail(memberEmail, subject, body);
+    await sendEmail(memberEmail, subject, emailBody);
 
     return new Response(
       JSON.stringify({ success: true, message: "Notification sent" }),

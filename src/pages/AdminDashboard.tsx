@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -6,8 +6,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Shield, UserX, UserCheck } from "lucide-react";
+import { Shield, UserX, UserCheck, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface Profile {
   id: string;
@@ -15,65 +16,70 @@ interface Profile {
   email: string;
   avatar_url: string | null;
   is_active: boolean;
-  roles?: string[];
+  roles: string[];
 }
 
 const AdminDashboard = () => {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
+  const [updatingRole, setUpdatingRole] = useState<string | null>(null);
+  const [updatingStatus, setUpdatingStatus] = useState<string | null>(null);
 
-  useEffect(() => {
-    checkUserRole();
-    fetchProfiles();
-  }, []);
-
-  const checkUserRole = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-
-    const { data } = await supabase
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", user.id)
-      .single();
-
-    setCurrentUserRole(data?.role || null);
-  };
-
-  const fetchProfiles = async () => {
+  const fetchProfiles = useCallback(async () => {
     try {
-      const { data: profilesData, error: profilesError } = await supabase
-        .from("profiles")
-        .select("*")
-        .order("full_name");
+      // Fetch profiles and roles in parallel
+      const [profilesResult, rolesResult] = await Promise.all([
+        supabase.from("profiles").select("*").order("full_name"),
+        supabase.from("user_roles").select("user_id, role")
+      ]);
 
-      if (profilesError) throw profilesError;
+      if (profilesResult.error) throw profilesResult.error;
 
-      const profilesWithRoles = await Promise.all(
-        (profilesData || []).map(async (profile) => {
-          const { data: rolesData } = await supabase
-            .from("user_roles")
-            .select("role")
-            .eq("user_id", profile.id);
+      // Map roles to profiles
+      const rolesMap = new Map<string, string[]>();
+      (rolesResult.data || []).forEach((r) => {
+        const existing = rolesMap.get(r.user_id) || [];
+        existing.push(r.role);
+        rolesMap.set(r.user_id, existing);
+      });
 
-          return {
-            ...profile,
-            roles: rolesData?.map((r) => r.role) || [],
-          };
-        })
-      );
+      const profilesWithRoles = (profilesResult.data || []).map((profile) => ({
+        ...profile,
+        roles: rolesMap.get(profile.id) || [],
+      }));
 
       setProfiles(profilesWithRoles);
     } catch (error) {
       console.error("Error fetching profiles:", error);
       toast.error("Failed to load user data");
-    } finally {
-      setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    const init = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setLoading(false);
+        return;
+      }
+
+      const { data } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", user.id)
+        .single();
+
+      setCurrentUserRole(data?.role || null);
+      await fetchProfiles();
+      setLoading(false);
+    };
+
+    init();
+  }, [fetchProfiles]);
 
   const toggleUserStatus = async (userId: string, currentStatus: boolean) => {
+    setUpdatingStatus(userId);
     try {
       const { error } = await supabase
         .from("profiles")
@@ -82,34 +88,86 @@ const AdminDashboard = () => {
 
       if (error) throw error;
 
+      // Update local state immediately
+      setProfiles(prev => prev.map(p => 
+        p.id === userId ? { ...p, is_active: !currentStatus } : p
+      ));
+      
       toast.success(`User ${!currentStatus ? "activated" : "deactivated"} successfully`);
-      fetchProfiles();
     } catch (error: any) {
       console.error("Error updating user status:", error);
       toast.error(error.message || "Failed to update user status");
+    } finally {
+      setUpdatingStatus(null);
     }
   };
 
-  const updateUserRole = async (userId: string, newRole: string, currentRoles: string[]) => {
+  const updateUserRole = async (userId: string, newRole: string) => {
+    setUpdatingRole(userId);
     try {
-      // Remove all existing roles
-      await supabase.from("user_roles").delete().eq("user_id", userId);
+      // First delete existing roles for this user
+      const { error: deleteError } = await supabase
+        .from("user_roles")
+        .delete()
+        .eq("user_id", userId);
 
-      // Add new role
-      const { error } = await supabase.from("user_roles").insert({
-        user_id: userId,
-        role: newRole as any,
-      });
+      if (deleteError) {
+        console.error("Delete error:", deleteError);
+        throw deleteError;
+      }
 
-      if (error) throw error;
+      // Then insert the new role
+      const { error: insertError } = await supabase
+        .from("user_roles")
+        .insert({
+          user_id: userId,
+          role: newRole as "admin" | "manager" | "staff",
+        });
+
+      if (insertError) {
+        console.error("Insert error:", insertError);
+        throw insertError;
+      }
+
+      // Update local state immediately
+      setProfiles(prev => prev.map(p => 
+        p.id === userId ? { ...p, roles: [newRole] } : p
+      ));
 
       toast.success("User role updated successfully");
-      fetchProfiles();
     } catch (error: any) {
       console.error("Error updating user role:", error);
       toast.error(error.message || "Failed to update user role");
+      // Refetch to ensure consistency
+      await fetchProfiles();
+    } finally {
+      setUpdatingRole(null);
     }
   };
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <Skeleton className="h-9 w-48 mb-2" />
+          <Skeleton className="h-5 w-72" />
+        </div>
+        <Card>
+          <CardHeader>
+            <Skeleton className="h-6 w-40 mb-2" />
+            <Skeleton className="h-4 w-64" />
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {[1, 2, 3].map((i) => (
+                <Skeleton key={i} className="h-16 w-full" />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   if (currentUserRole !== "admin") {
     return (
@@ -125,14 +183,6 @@ const AdminDashboard = () => {
             </CardDescription>
           </CardHeader>
         </Card>
-      </div>
-    );
-  }
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-accent"></div>
       </div>
     );
   }
@@ -181,11 +231,16 @@ const AdminDashboard = () => {
                   <TableCell className="text-muted-foreground">{profile.email}</TableCell>
                   <TableCell>
                     <Select
-                      value={profile.roles?.[0] || "staff"}
-                      onValueChange={(value) => updateUserRole(profile.id, value, profile.roles || [])}
+                      value={profile.roles[0] || "staff"}
+                      onValueChange={(value) => updateUserRole(profile.id, value)}
+                      disabled={updatingRole === profile.id}
                     >
                       <SelectTrigger className="w-[120px]">
-                        <SelectValue />
+                        {updatingRole === profile.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <SelectValue />
+                        )}
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="admin">Admin</SelectItem>
@@ -204,8 +259,11 @@ const AdminDashboard = () => {
                       variant="ghost"
                       size="sm"
                       onClick={() => toggleUserStatus(profile.id, profile.is_active)}
+                      disabled={updatingStatus === profile.id}
                     >
-                      {profile.is_active ? (
+                      {updatingStatus === profile.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      ) : profile.is_active ? (
                         <>
                           <UserX className="h-4 w-4 mr-2" />
                           Deactivate
