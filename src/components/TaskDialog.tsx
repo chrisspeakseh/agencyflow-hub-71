@@ -26,6 +26,7 @@ import { TASK_STATUSES, TASK_PRIORITIES } from "@/config/appConfig";
 import { Calendar as CalendarIcon, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { Checkbox } from "@/components/ui/checkbox";
+import { createNotificationForUser } from "@/lib/notifications";
 
 interface TaskDialogProps {
   open: boolean;
@@ -192,10 +193,20 @@ export function TaskDialog({
             .eq("task_id", task.id)
             .in("user_id", removedIds);
           
-          // Send unassignment notifications (non-blocking)
+          // Send unassignment notifications
           removedIds.forEach(userId => {
             const member = teamMembers.find(m => m.id === userId);
             if (member) {
+              // Create in-app notification
+              createNotificationForUser(
+                userId,
+                "Task Unassigned",
+                `You have been unassigned from task "${formData.title}" in project "${projectName}"`,
+                "task_assignment",
+                `/projects/${projectId}`
+              );
+
+              // Send email notification (non-blocking)
               supabase.functions.invoke("send-assignment-notification", {
                 body: {
                   taskId: task.id,
@@ -222,6 +233,16 @@ export function TaskDialog({
           addedIds.forEach(userId => {
             const member = teamMembers.find(m => m.id === userId);
             if (member) {
+              // Create in-app notification
+              createNotificationForUser(
+                userId,
+                "New Task Assigned",
+                `You have been assigned to task "${formData.title}" in project "${projectName}"`,
+                "task_assignment",
+                `/projects/${projectId}`
+              );
+
+              // Send email notification (non-blocking)
               supabase.functions.invoke("send-assignment-notification", {
                 body: {
                   taskId: task.id,
@@ -247,6 +268,16 @@ export function TaskDialog({
         assignee_ids.forEach(userId => {
           const member = teamMembers.find(m => m.id === userId);
           if (member) {
+            // Create in-app notification
+            createNotificationForUser(
+              userId,
+              "New Task Assigned",
+              `You have been assigned to task "${formData.title}" in project "${projectName}"`,
+              "task_assignment",
+              `/projects/${projectId}`
+            );
+
+            // Send email notification (non-blocking)
             supabase.functions.invoke("send-assignment-notification", {
               body: {
                 taskId,
