@@ -46,7 +46,7 @@ export function CalendarView({ projectId, refreshKey }: CalendarViewProps) {
         .from("tasks")
         .select(`
           *,
-          profiles:assignee_id (
+          profiles:profiles!tasks_assignee_id_fkey (
             full_name,
             avatar_url
           )

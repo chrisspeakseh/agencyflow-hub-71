@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { User, Session } from "@supabase/supabase-js";
 
@@ -9,6 +9,7 @@ interface ProtectedRouteProps {
 
 const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
@@ -17,14 +18,23 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
     const checkUserAccess = async (userId: string) => {
       const { data: profile } = await supabase
         .from("profiles")
-        .select("is_active")
+        .select("is_active, force_password_change")
         .eq("id", userId)
         .single();
 
       if (!profile?.is_active) {
         await supabase.auth.signOut();
         navigate("/auth?inactive=true");
+        return false;
       }
+
+      // Check if password change is required (skip if already on change-password page)
+      if (profile?.force_password_change && location.pathname !== "/change-password") {
+        navigate("/change-password");
+        return false;
+      }
+
+      return true;
     };
 
     // Set up auth state listener FIRST
@@ -35,9 +45,12 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
         if (!session) {
           navigate("/auth");
         } else {
-          await checkUserAccess(session.user.id);
+          // Use setTimeout to avoid deadlock
+          setTimeout(async () => {
+            await checkUserAccess(session.user.id);
+            setLoading(false);
+          }, 0);
         }
-        setLoading(false);
       }
     );
 
@@ -47,14 +60,15 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
       setUser(session?.user ?? null);
       if (!session) {
         navigate("/auth");
+        setLoading(false);
       } else {
         await checkUserAccess(session.user.id);
+        setLoading(false);
       }
-      setLoading(false);
     });
 
     return () => subscription.unsubscribe();
-  }, [navigate]);
+  }, [navigate, location.pathname]);
 
   if (loading) {
     return (

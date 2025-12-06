@@ -14,6 +14,21 @@ export type Database = {
   }
   public: {
     Tables: {
+      dummy_cron: {
+        Row: {
+          created_at: string
+          id: number
+        }
+        Insert: {
+          created_at?: string
+          id?: number
+        }
+        Update: {
+          created_at?: string
+          id?: number
+        }
+        Relationships: []
+      }
       notifications: {
         Row: {
           created_at: string
@@ -60,6 +75,7 @@ export type Database = {
           avatar_url: string | null
           created_at: string
           email: string
+          force_password_change: boolean
           full_name: string
           id: string
           is_active: boolean
@@ -70,6 +86,7 @@ export type Database = {
           avatar_url?: string | null
           created_at?: string
           email: string
+          force_password_change?: boolean
           full_name: string
           id: string
           is_active?: boolean
@@ -80,6 +97,7 @@ export type Database = {
           avatar_url?: string | null
           created_at?: string
           email?: string
+          force_password_change?: boolean
           full_name?: string
           id?: string
           is_active?: boolean
@@ -229,11 +247,60 @@ export type Database = {
           },
         ]
       }
+      task_logs: {
+        Row: {
+          action_type: string
+          created_at: string
+          details: Json | null
+          id: string
+          new_value: string | null
+          old_value: string | null
+          task_id: string
+          user_id: string
+        }
+        Insert: {
+          action_type: string
+          created_at?: string
+          details?: Json | null
+          id?: string
+          new_value?: string | null
+          old_value?: string | null
+          task_id: string
+          user_id: string
+        }
+        Update: {
+          action_type?: string
+          created_at?: string
+          details?: Json | null
+          id?: string
+          new_value?: string | null
+          old_value?: string | null
+          task_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_logs_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_logs_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tasks: {
         Row: {
           assignee_id: string | null
           comments: string | null
           created_at: string
+          created_by: string | null
           description: string | null
           due_date: string | null
           id: string
@@ -248,6 +315,7 @@ export type Database = {
           assignee_id?: string | null
           comments?: string | null
           created_at?: string
+          created_by?: string | null
           description?: string | null
           due_date?: string | null
           id?: string
@@ -262,6 +330,7 @@ export type Database = {
           assignee_id?: string | null
           comments?: string | null
           created_at?: string
+          created_by?: string | null
           description?: string | null
           due_date?: string | null
           id?: string
@@ -276,6 +345,13 @@ export type Database = {
           {
             foreignKeyName: "tasks_assignee_id_fkey"
             columns: ["assignee_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tasks_created_by_fkey"
+            columns: ["created_by"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
@@ -332,7 +408,12 @@ export type Database = {
       app_role: "admin" | "manager" | "staff"
       project_status: "active" | "archived" | "completed"
       task_priority: "P1-High" | "P2-Medium" | "P3-Low"
-      task_status: "Todo" | "In Progress" | "Internal Review" | "Done"
+      task_status:
+        | "Todo"
+        | "In Progress"
+        | "Internal Review"
+        | "Done"
+        | "Pending Client Review"
       user_role: "admin" | "manager" | "staff"
     }
     CompositeTypes: {
@@ -464,7 +545,13 @@ export const Constants = {
       app_role: ["admin", "manager", "staff"],
       project_status: ["active", "archived", "completed"],
       task_priority: ["P1-High", "P2-Medium", "P3-Low"],
-      task_status: ["Todo", "In Progress", "Internal Review", "Done"],
+      task_status: [
+        "Todo",
+        "In Progress",
+        "Internal Review",
+        "Done",
+        "Pending Client Review",
+      ],
       user_role: ["admin", "manager", "staff"],
     },
   },

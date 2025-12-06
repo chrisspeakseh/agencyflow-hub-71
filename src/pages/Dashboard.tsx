@@ -61,7 +61,7 @@ const Dashboard = () => {
 
       // Build queries based on role
       let projectsQuery = supabase.from("projects").select("id, name, brand_color, status").eq("status", "active").limit(5);
-      let tasksQuery = supabase.from("tasks").select("id, title, due_date, status, project_id, profiles:assignee_id(full_name)").neq("status", "Done").limit(10);
+      let tasksQuery = supabase.from("tasks").select("id, title, due_date, status, project_id, profiles:profiles!tasks_assignee_id_fkey(full_name)").neq("status", "Done").limit(10);
       
       if (!isAdminOrManager) {
         projectsQuery = projectsQuery.in("id", memberProjectIds);
